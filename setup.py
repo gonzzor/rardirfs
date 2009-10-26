@@ -12,7 +12,7 @@ files are shown instead. Beside this it can also filter files and
 flatten out directories.""",
       author='Jonas Jonsson',
       author_email='jonas@websystem.se',
-      url='http://foo.bar',
+      url='http://launchpad.net/rardirfs',
       license='BSD',
       packages=['RarDirFs'],
       scripts=['rardirfs'],
