@@ -1,0 +1,162 @@
+.TH rardirfs 1 "23 okt 2009" "RarDirFs 0.1" "RarDirFs Manual"
+.SH NAME
+rardirfs \- mount a directory with direct access to RAR archive content
+.SH SYNOPSIS
+.B rardirfs 
+.I srcdir mountpoint 
+[options]
+.SH DESCRIPTION
+Mount a directory read only where all rar archives are hidden and their files are shown instead. Beside this it can also filter files and flatten out directories.
+
+The big difference from other fuse based rar archive file systems is that RarDirFs doesn't unpack the whole file when you open it, it just read directly from the archive. No extra storage, no extra time, just as you normally would. Because of this design choice some limitations arose, see under Limitations.
+.SH OPTIONS
+.TP
+.B "-h/--help"
+Print help options.
+.TP
+.B "--version"
+Print rardirfs and fuse versions.
+.TP
+.B \-o
+Options are specified with a
+.B \-o
+flag followed by a comma separated string of options. 
+.RS
+.TP
+.B filter=FILE
+A file containing patterns used to filter out entries. An entry that matches any pattern in FILE will not be available.
+
+The file should contain one pattern per line. Lines starting with # are ignored. All patterns must be compatible with Python re module.
+
+.TP
+.B flatten=FILE
+A file containing patterns used to flatten out directories. A directory matching a pattern will be replaced by it's content.
+
+The file uses same format as 
+.B filter
+above.
+
+.SH FUSE OPTIONS
+.TP
+.B "-d/-o debug"
+enable debug output (implies -f)
+.TP
+.B "-f"
+foreground operation
+
+.TP
+.B \-o
+Options are specified with a
+.B \-o
+flag followed by a comma separated string of options. 
+.RS
+.TP
+.B allow_other
+allow access to other users
+
+.TP
+.B allow_root
+allow access to root
+.TP
+.B nonempty
+allow mounts over non-empty file/dir
+.TP
+.B default_permissions
+enable permission checking by kernel
+.TP
+.B fsname=NAME
+set filesystem name
+.TP
+.B subtype=NAME
+set filesystem type
+.TP
+.B large_read
+issue large read requests (2.4 only)
+.TP
+.B max_read=N
+set maximum size of read requests
+.TP
+.B hard_remove
+immediate removal (don't hide files)
+.TP
+.B use_ino
+let filesystem set inode numbers
+.TP
+.B readdir_ino
+try to fill in d_ino in readdir
+.TP
+.B direct_io
+use direct I/O
+.TP
+.B kernel_cache
+cache files in kernel
+.TP
+.B [no]auto_cache
+enable caching based on modification times (off)
+.TP
+.B umask=M
+set file permissions (octal)
+.TP
+.B uid=N
+set file owner
+.TP
+.B gid=N
+set file group
+.TP
+.B entry_timeout=T
+cache timeout for names (1.0s)
+.TP
+.B negative_timeout=T
+cache timeout for deleted names (0.0s)
+.TP
+.B attr_timeout=T
+cache timeout for attributes (1.0s)
+.TP
+.B ac_attr_timeout=T
+auto cache timeout for attributes (attr_timeout)
+.TP
+.B intr
+allow requests to be interrupted
+.TP
+.B intr_signal=NUM
+signal to send on interrupt (10)
+.TP
+.B modules=M1[:M2...]
+names of modules to push onto filesystem stack
+.TP
+.B max_write=N
+set maximum size of write requests
+.TP
+.B max_readahead=N
+set maximum readahead
+.TP
+.B async_read
+perform reads asynchronously (default)
+.TP
+.B sync_read
+perform reads synchronously
+.TP
+.B atomic_o_trunc
+enable atomic open+truncate support
+.TP
+.B big_writes
+enable larger than 4kB writes
+.TP
+.B no_remote_lock
+disable remote file locking
+
+.SH BUGS
+.TP
+Only works on uncompressed rar archives. If you try to use it on compressed archives it won't show any files.
+.TP
+Only first file in an archive is shown. This is an optimization since all files needs to scanned in order to support more then one file.
+.TP
+Flatten only works at one level. If you have /foo/foo/bar and want to flatten out foo, you would get /foo/bar instead of the expected /bar.
+.TP
+RarDirFs does not verify that the RAR archive is correct or complete.
+
+.SH AUTHOR
+Jonas Jonsson <jonas@websystem.se>
+
+.SH SEE ALSO
+.BR mount(8)

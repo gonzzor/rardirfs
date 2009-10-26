@@ -1,0 +1,73 @@
+RarDirFs 0.1
+============
+Mount a directory read only where all rar archives are hidden and their files
+are shown instead. Beside this it can also filter files and flatten out
+directories.
+
+The big difference from other fuse based rar archive file systems is that
+RarDirFs doesn't unpack the whole file when you open it, it just read directly
+from the archive. No extra storage, no extra time, just as you normally would.
+Because of this design some limitations arose, see under Limitations.
+
+Example
+-------
+Assume we have two archives that contains one file each, say foo and bar. We
+have stored them in separate directories. We also have one file we don't want
+to show, foobar.
+
+Using this srcdir
+srcdir/foobar
+srcdir/Archive1/foo.rar
+srcdir/Archive1/foo.r01
+srcdir/Archive1/foo.r02
+srcdir/Archive2/bar.rar
+srcdir/Archive2/bar.r01
+srcdir/Archive2/bar.r02
+
+This gives us the following structure
+mountdir/
+mountdir/foo
+mountdir/bar
+
+In the example above we could have used this command line
+rardirfs srcdir mountdir -o flatten=flatten.txt,filter=filter.txt
+
+Where flatten.txt would look like this
+# Don't show the folders Archive, show there content instead
+^Archive\d+$
+
+And filter.txt
+# I don't like foobar
+^foobar$
+
+The filter and flatten files
+----------------------------
+These files can be used to customize the behaviour of RarDirFs. It's a plain
+text file where each line contains a regular expression compatible with Python
+re module. Lines starting with # are ignored. Remember that there will be no
+way to differentiate between a file or a directory.
+
+If an entry would match a pattern in both files, it will be flattened. An
+exception from this rule is found in Limitations below.
+
+Known Limitations
+-----------------
+* Only works on uncompressed rar archives. If you try to use it on compressed
+archives it won't show any files.
+* Only first file in an archive is shown. This is an optimization since all
+files needs to scanned in order to support more then one file.
+* Flatten only works at one level. If you have /foo/foo/bar and want to flatten
+out foo, you would get /foo/bar instead of the expected /bar.
+* RarDirFs does not verify that the RAR archive is correct or complete.
+
+Requirements
+------------
+Currently it only depends on fuse-python.
+
+License
+-------
+2-clause BSD License, see LICENSE for details
+
+More information
+----------------
+See http://bla bla bla for more information.

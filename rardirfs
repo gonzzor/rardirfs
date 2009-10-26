@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2009, Jonas Jonsson <jonas@websystem.se>
+# All rights reserved.
+#
+# See file LICENSE for license details
+#
+
+import sys
+import os
+from RarDirFs import rardirfs
+from optparse import OptParseError, OptionParser
+import fuse
+
+def main():
+    usage = "%prog srcdir mountpoint [options]"
+    desc ="""Mount a directory read-only with all rar archives "unpacked". Only uncompressed archives are supported."""
+    rarDirFs = rardirfs.RarDirFs(version="%prog 0.1", usage=usage,
+            description=desc, dash_s_do='setsingle')
+    rarDirFs.parser.add_option(mountopt="filter", metavar="FILE",
+            help="hide files matching pattern in FILE")
+    rarDirFs.parser.add_option(mountopt="flatten", metavar="FILE",
+            help="flatten directories matching pattern in FILE")
+
+    rarDirFs.parse(values=rarDirFs, errex=1)
+    (options, args) = rarDirFs.cmdline
+
+    if rarDirFs.fuse_args.mount_expected():
+        if len(args) != 1:
+            OptionParser.error(rarDirFs.parser, "missing srcdir")
+        elif not os.path.isdir(args[0]):
+            OptionParser.error(rarDirFs.parser,
+                "bad srcdir {0}, not a directory.".format(args[0]))
+        else:
+            rarDirFs.srcdir = os.path.abspath(args[0])
+    try:
+        rarDirFs.main()
+    except fuse.FuseError, e:
+        print e
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
