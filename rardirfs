@@ -19,12 +19,17 @@ def main():
     rarDirFs = rardirfs.RarDirFs(version="%prog 0.1", usage=usage,
             description=desc, dash_s_do='setsingle')
     rarDirFs.parser.add_option(mountopt="filter", metavar="FILE", default="/etc/rardirfs/filter",
-            help="hide files matching pattern in FILE")
+            help="hide files matching pattern in FILE [default: %default]")
     rarDirFs.parser.add_option(mountopt="flatten", metavar="FILE", default="/etc/rardirfs/flatten",
-            help="flatten directories matching pattern in FILE")
+            help="flatten directories matching pattern in FILE [default: %default]")
 
     rarDirFs.parse(values=rarDirFs, errex=1)
     (options, args) = rarDirFs.cmdline
+    # It seems that default doesn't work for suboptparser, manually add
+    if not options.filter:
+        options.filter = "/etc/rardirfs/filter"
+    if not options.flatten:
+        options.flatten = "/etc/rardirfs/flatten"
 
     if rarDirFs.fuse_args.mount_expected():
         if len(args) != 1:
