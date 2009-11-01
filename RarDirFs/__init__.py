@@ -5,5 +5,8 @@
 #
 # See file LICENSE for license details
 #
+'''
+    RarDirFS modules
+'''
 
 __all__ = ['rarfile', 'rardirfs']
