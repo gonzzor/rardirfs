@@ -56,7 +56,7 @@ class Entry(object):
         An entry in the virtual filesystem.
     '''
     def __init__(self):
-        self.entries = []
+        self.entries = set()
         self.stat = -errno.ENOSYS
         self.populated = False
         self.rar = None
@@ -76,6 +76,18 @@ class Entry(object):
 
     def __repr__(self):
         return "Entry()"
+
+    def __hash__(self):
+        if self.rar:
+            return (self.realpath + self.info.filename).__hash__()
+        else:
+            return (self.realpath + self.name).__hash__()
+
+    def __eq__(self, other):
+        if self.rar:
+            return other.rar and self.realpath == other.realpath and self.info.filename == self.info.filename
+        else:
+            return not other.rar and self.realpath == other.realpath and self.name == self.name
 
 class RoStat(fuse.Stat):
     '''
@@ -184,6 +196,10 @@ class RarDirFs(fuse.Fuse):
             self.repopulate_vfs(path)
             return
 
+        (h, t) = os.path.split(path)
+        if self.shouldBeHidden(t) or self.shouldBeFlatten(h, t):
+            return
+
         if not path in self.vfs:
             self.vfs[path] = Entry()
             self.vfs[path].name = os.path.basename(path)
@@ -198,9 +214,9 @@ class RarDirFs(fuse.Fuse):
 
         # Now path is a dir, populate
         for e in os.listdir("." + path):
-            if self.shouldFlatten(path, e):
-                    for e_sub in os.listdir("." + os.path.join(path, e)):
-                        self.appendToVfs(path, os.path.join(path, e), e_sub)
+            if self.shouldBeFlatten(path, e):
+                for e_sub in os.listdir("." + os.path.join(path, e)):
+                    self.appendToVfs(path, os.path.join(path, e), e_sub)
             else:
                 self.appendToVfs(path, path, e)
 
@@ -218,6 +234,7 @@ class RarDirFs(fuse.Fuse):
                 stat = os.lstat("." + os.path.join(self.vfs[path].realpath, self.vfs[path].name))
             if stat.st_mtime != self.vfs[path].stat.st_mtime:
                 self.update_path(path)
+            # TODO: Check if path is a realdir that contains flattened directories.
         except OSError:
             self.delete_path(path)
 
@@ -238,18 +255,16 @@ class RarDirFs(fuse.Fuse):
             self.vfs[path].stat = RoStat("." + os.path.join(realpath, name))
 
             if self.vfs[path].stat.isdir() and self.vfs[path].isPopulated():
-                # We have alread populated this entry/dir, repopulate it
-                # Or more correctly just add new entries that doesn't exist
+                # mtime of directory has changed, this hints that it's possible
+                # that an entry below it has changed.
                 realdir = os.path.join(realpath, name)
 
                 for e in os.listdir("." + realdir):
-                    if self.shouldFlatten(realdir, e):
-                            for e_sub in os.listdir("." + os.path.join(realdir, e)):
-                                if not os.path.join(path, e_sub) in self.vfs:
-                                    self.appendToVfs(path, os.path.join(realdir, e), e_sub)
+                    if self.shouldBeFlatten(realdir, e):
+                        for e_sub in os.listdir("." + os.path.join(realdir, e)):
+                            self.appendToVfs(path, os.path.join(realdir, e), e_sub)
                     else:
-                        if not os.path.join(path, e) in self.vfs:
-                            self.appendToVfs(path, realdir, e)
+                        self.appendToVfs(path, realdir, e)
 
     def delete_path(self, path):
         '''
@@ -262,7 +277,7 @@ class RarDirFs(fuse.Fuse):
         del self.vfs[path]
 
 
-    def shouldFlatten(self, path, e):
+    def shouldBeFlatten(self, path, e):
         '''
             Should the entry path/e be removed and it's content be displayed insted
         '''
@@ -293,6 +308,7 @@ class RarDirFs(fuse.Fuse):
 
         filename = os.path.join(realpath, e)
 
+        entry = None
         m = self.rarRe.match(e)
         if m:
             if m.group(1) in ('001', '01') or m.group(2) == 'ar' or m.group(3) in ('001', '01'):
@@ -305,14 +321,15 @@ class RarDirFs(fuse.Fuse):
                     entry.rar = rar
                     entry.realpath = realpath
                     entry.stat = RarStat("." + filename, info)
-                    self.vfs[vpath].entries.append(entry)
-                    self.vfs[os.path.join(vpath, entry.name)] = entry
         else:
             entry = Entry()
             entry.name = e
             entry.realpath = realpath
             entry.stat = RoStat("." + filename)
-            self.vfs[vpath].entries.append(entry)
+
+        if entry:
+            self.vfs[vpath].entries.discard(entry)
+            self.vfs[vpath].entries.add(entry)
             self.vfs[os.path.join(vpath, entry.name)] = entry
 
     def getattr(self, path):
