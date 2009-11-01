@@ -63,6 +63,7 @@ class Entry(object):
         self.info = None
         self.realpath = None
         self.name = None
+        self.flattenDirectories = dict() # name -> mtime
 
     def isPopulated(self):
         if self.stat != -errno.ENOSYS:
@@ -215,6 +216,7 @@ class RarDirFs(fuse.Fuse):
         # Now path is a dir, populate
         for e in os.listdir("." + path):
             if self.shouldBeFlatten(path, e):
+                self.vfs[path].flattenDirectories[e] = os.lstat("." + os.path.join(path, e))
                 for e_sub in os.listdir("." + os.path.join(path, e)):
                     self.appendToVfs(path, os.path.join(path, e), e_sub)
             else:
@@ -228,13 +230,28 @@ class RarDirFs(fuse.Fuse):
             At this point path is in vfs
         '''
         try:
+            realpath = None
             if self.vfs[path].rar:
                 stat = os.lstat(self.vfs[path].rar.rarfile)
             else:
-                stat = os.lstat("." + os.path.join(self.vfs[path].realpath, self.vfs[path].name))
+                realpath = "." + os.path.join(self.vfs[path].realpath, self.vfs[path].name)
+                stat = os.lstat(realpath)
+
             if stat.st_mtime != self.vfs[path].stat.st_mtime:
                 self.update_path(path)
-            # TODO: Check if path is a realdir that contains flattened directories.
+            elif realpath:
+                # Normal directory hasn't changed, check flatten directories
+                # Feels lite stupid, somewhat duplicates the code in update_path
+                if os.path.isdir(realpath):
+                    for e in os.listdir(realpath):
+                        if self.shouldBeFlatten(realpath[1:], e): # [1:] -> Remove "." in beginning
+                            st = os.lstat("." + os.path.join(realpath, e))
+                            fD = self.vfs[path].flattenDirectories
+                            if (e in fD and st.st_mtime != fD[e].st_mtime) or not e in fD:
+                                # Flatten directory has changed, update, or it's a new flattened directory
+                                fD[e] = st
+                                for e_sub in os.listdir("." + os.path.join(realpath, e)):
+                                    self.appendToVfs(path, os.path.join(realpath, e), e_sub)
         except OSError:
             self.delete_path(path)
 
@@ -260,9 +277,14 @@ class RarDirFs(fuse.Fuse):
                 realdir = os.path.join(realpath, name)
 
                 for e in os.listdir("." + realdir):
-                    if self.shouldBeFlatten(realdir, e):
-                        for e_sub in os.listdir("." + os.path.join(realdir, e)):
-                            self.appendToVfs(path, os.path.join(realdir, e), e_sub)
+                    # Is this a flatten directory
+                    if e in self.vfs[path].flattenDirectories:
+                        st = os.lstat("." + os.path.join(realdir, e))
+                        if st.st_mtime != self.vfs[path].flattenDirectories[e].st_mtime:
+                            # Flatten directory has changed, update
+                            self.vfs[path].flattenDirectories[e] = os.lstat("." + os.path.join(realdir, e))
+                            for e_sub in os.listdir("." + os.path.join(realdir, e)):
+                                self.appendToVfs(path, os.path.join(realdir, e), e_sub)
                     else:
                         self.appendToVfs(path, realdir, e)
 
