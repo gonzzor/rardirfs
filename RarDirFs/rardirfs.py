@@ -12,7 +12,7 @@ import stat    # for file properties
 import os      # for filesystem modes (O_RDONLY, etc)
 import errno   # for error number codes (ENOENT, etc)
                # - note: these must be returned as negatives
-
+import traceback
 import re
 import rarfile
 
@@ -234,17 +234,17 @@ class RarDirFs(fuse.Fuse):
             if self.vfs[path].rar:
                 stat = os.lstat(self.vfs[path].rar.rarfile)
             else:
-                realpath = "." + os.path.join(self.vfs[path].realpath, self.vfs[path].name)
-                stat = os.lstat(realpath)
+                realpath = os.path.join(self.vfs[path].realpath, self.vfs[path].name)
+                stat = os.lstat("." + realpath)
 
             if stat.st_mtime != self.vfs[path].stat.st_mtime:
                 self.update_path(path)
             elif realpath:
                 # Normal directory hasn't changed, check flatten directories
                 # Feels lite stupid, somewhat duplicates the code in update_path
-                if os.path.isdir(realpath):
-                    for e in os.listdir(realpath):
-                        if self.shouldBeFlatten(realpath[1:], e): # [1:] -> Remove "." in beginning
+                if os.path.isdir("." + realpath):
+                    for e in os.listdir("." + realpath):
+                        if self.shouldBeFlatten(realpath, e):
                             st = os.lstat("." + os.path.join(realpath, e))
                             fD = self.vfs[path].flattenDirectories
                             if (e in fD and st.st_mtime != fD[e].st_mtime) or not e in fD:
@@ -253,6 +253,7 @@ class RarDirFs(fuse.Fuse):
                                 for e_sub in os.listdir("." + os.path.join(realpath, e)):
                                     self.appendToVfs(path, os.path.join(realpath, e), e_sub)
         except OSError:
+            traceback.print_exc()
             self.delete_path(path)
 
     def update_path(self, path):
