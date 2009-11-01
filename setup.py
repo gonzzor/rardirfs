@@ -17,7 +17,7 @@ flatten out directories.""",
       packages=['RarDirFs'],
       scripts=['rardirfs'],
       platforms=['Linux'],
-      data_files=[('man/man1', ['rardirfs.1'])],
+      data_files=[('man/man1', ['rardirfs.1']), ('/etc/rardirfs', ['filter', 'flatten'])],
       classifiers=[
           'Development Status :: 3 - Alpha',
           'Environment :: No Input/Output (Daemon)',

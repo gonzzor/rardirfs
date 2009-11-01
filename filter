@@ -1,0 +1,4 @@
+# Entries matching any one of these regular expressions will be "hidden".
+# One expression per line. It must be compatible with Python re module
+#
+# If a line starts with # it will be ignored

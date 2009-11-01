@@ -18,9 +18,9 @@ def main():
     desc ="""Mount a directory read-only with all rar archives "unpacked". Only uncompressed archives are supported."""
     rarDirFs = rardirfs.RarDirFs(version="%prog 0.1", usage=usage,
             description=desc, dash_s_do='setsingle')
-    rarDirFs.parser.add_option(mountopt="filter", metavar="FILE",
+    rarDirFs.parser.add_option(mountopt="filter", metavar="FILE", default="/etc/rardirfs/filter",
             help="hide files matching pattern in FILE")
-    rarDirFs.parser.add_option(mountopt="flatten", metavar="FILE",
+    rarDirFs.parser.add_option(mountopt="flatten", metavar="FILE", default="/etc/rardirfs/flatten",
             help="flatten directories matching pattern in FILE")
 
     rarDirFs.parse(values=rarDirFs, errex=1)
