@@ -300,7 +300,7 @@ class RarDirFs(fuse.Fuse):
 
                 for info in rar.infolist()[:1]:
                     entry = Entry()
-                    entry.name = info.filename
+                    entry.name = info.filename.split('\\')[-1]
                     entry.info = info
                     entry.rar = rar
                     entry.realpath = realpath
@@ -383,7 +383,7 @@ class RarDirFs(fuse.Fuse):
             if path in self.rarFs.vfs:
                 entry = self.rarFs.vfs[path]
                 if entry.rar:
-                    self.file = RarDirFs.RarFile(entry.rar, entry.name)
+                    self.file = RarDirFs.RarFile(entry.rar, entry.info.filename)
                 else:
                     self.file = RarDirFs.NormalFile(os.path.join(entry.realpath, entry.name))
 
