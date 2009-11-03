@@ -51,44 +51,27 @@ def parsePatternFile(filename):
         print e
     return ret
 
-class Entry(object):
+class VfsEntry(object):
     '''
-        An entry in the virtual filesystem.
+        An entry in the vfs dictonary.
     '''
-    def __init__(self):
-        self.entries = set()
-        self.stat = -errno.ENOSYS
-        self.populated = False
+
+    def __init__(self, realpath):
         self.rar = None
-        self.info = None
-        self.realpath = None
-        self.name = None
-        self.flattenDirectories = dict() # name -> mtime
+        self.rar_info = None
+        self.realpath = realpath
 
-    def isPopulated(self):
-        if self.stat != -errno.ENOSYS:
-            if stat.S_ISDIR(self.stat.st_mode):
-                return self.populated
-            else:
-                return True
+    def stat(self):
+        '''
+            Return either RoStat, RarStat or None if it shouldn't exist any more.
+        '''
+        if not os.path.exists("." + self.realpath):
+            return -errno.ENOENT
 
-    def __str__(self):
-        return "Entry(%s, %s): %s" % (self.realpath, self.name, [str(x) for x in self.entries])
-
-    def __repr__(self):
-        return "Entry()"
-
-    def __hash__(self):
         if self.rar:
-            return (self.realpath + self.info.filename).__hash__()
+            return RarStat(self.realpath, self.rar_info)
         else:
-            return (self.realpath + self.name).__hash__()
-
-    def __eq__(self, other):
-        if self.rar:
-            return other.rar and self.realpath == other.realpath and self.info.filename == self.info.filename
-        else:
-            return not other.rar and self.realpath == other.realpath and self.name == self.name
+            return RoStat(self.realpath)
 
 class RoStat(fuse.Stat):
     '''
@@ -96,7 +79,9 @@ class RoStat(fuse.Stat):
     '''
 
     def __init__(self, filename):
-        s = os.lstat(filename)
+        fuse.Stat.__init__(self)
+
+        s = os.lstat("." + filename)
         self.st_mode = s.st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
         self.st_ino = s.st_ino
         self.st_dev = s.st_dev
@@ -108,34 +93,16 @@ class RoStat(fuse.Stat):
         self.st_mtime = s.st_mtime
         self.st_ctime = s.st_ctime
 
-    def isdir(self):
-        return self.st_mode & stat.S_IFDIR == stat.S_IFDIR
-
 class RarStat(fuse.Stat):
     '''
         Stat for a file inside a rar archive.
     '''
+    #TODO: Inherit RoStat instead?
 
     def __init__(self, filename, info):
-        '''
-            Setup a stat object used by fuse
-            filename is full path to first file in rar archive.
-            info is a RarInfo object
-
-            - st_mode (protection bits)
-            - st_ino (inode number)
-            - st_dev (device)
-            - st_nlink (number of hard links)
-            - st_uid (user ID of owner)
-            - st_gid (group ID of owner)
-            - st_size (size of file, in bytes)
-            - st_atime (time of most recent access)
-            - st_mtime (time of most recent content modification)
-            - st_ctime (platform dependent; time of most recent metadata change on
-                                    Unix, or the time of creation on Windows).
-        '''
         fuse.Stat.__init__(self)
-        s = os.lstat(filename)
+
+        s = os.lstat("." + filename)
         mode = 0
         if info.isdir():
             mode |= stat.S_IFDIR
@@ -155,9 +122,6 @@ class RarStat(fuse.Stat):
         self.st_mtime = s.st_mtime
         self.st_ctime = time.mktime(info.date_time + (-1, -1, -1))
 
-    def isdir(self):
-        return self.st_mode & stat.S_IFDIR == stat.S_IFDIR
-
 class RarDirFs(fuse.Fuse):
     '''
         Mount a directory read only with the content of rar files display instead.
@@ -166,208 +130,165 @@ class RarDirFs(fuse.Fuse):
     def __init__(self, *args, **kw):
         fuse.Fuse.__init__(self, *args, **kw)
 
-        self.file_class = self.RarDirFsFile
-        self.RarDirFsFile.rarFs = self
+        # Parameters filled in by calling function
         self.filter = None
-        self.filterRes = []
         self.flatten = None
-        self.flattenRes = []
-        self.rarRe = re.compile("^.*?(?:\.part(\d{2,3})\.rar|\.r(ar|\d{2})|(\d{2,3}))$", re.I)
         self.srcdir = None
 
-        self.vfs = {} # virtual path -> (rar, info, stat)
+        # Use a special class for file operations
+        self.file_class = self.RarDirFsFile
+        self.RarDirFsFile.rarDirFs = self
 
-    def populate_vfs(self, path, mustPopulate = True):
-        '''
-            Populate self.vfs with information based on path
-        '''
-        if path in self.vfs and self.vfs[path].isPopulated():
-            # Repopulate if needed, then return
-            self.repopulate_vfs(path)
-            return
+        self.filterRes = []
+        self.flattenRes = []
+        self.rarRe = re.compile("^.*?(?:\.part(\d{2,3})\.rar|\.r(ar|\d{2})|(\d{2,3}))$", re.I)
+        self.couldExistCache = dict()
 
-        if not os.path.exists("." + path) or not os.path.isdir("." + path):
-            path = os.path.dirname(path)
-            mustPopulate = True
-            if not os.path.isdir("." + path):
-                return
+        self.vfs = {} # Virtual path -> Real path
+        self.rars = {} # real rarfile path -> RarFile object
 
-        if path in self.vfs and self.vfs[path].isPopulated():
-            # Repopulate if needed, then return
-            self.repopulate_vfs(path)
-            return
-
-        (h, t) = os.path.split(path)
-        if self.shouldBeHidden(t) or self.shouldBeFlatten(h, t):
-            return
-
-        if not path in self.vfs:
-            self.vfs[path] = Entry()
-            self.vfs[path].name = os.path.basename(path)
-            self.vfs[path].stat = RoStat("." + path)
-            self.vfs[path].realpath = path
-
-        if not mustPopulate:
-            # Don't populate if we don't need.
-            return
-
-        self.vfs[path].populated = True
-
-        # Now path is a dir, populate
-        for e in os.listdir("." + path):
-            if self.shouldBeFlatten(path, e):
-                self.vfs[path].flattenDirectories[e] = os.lstat("." + os.path.join(path, e))
-                for e_sub in os.listdir("." + os.path.join(path, e)):
-                    self.appendToVfs(path, os.path.join(path, e), e_sub)
-            else:
-                self.appendToVfs(path, path, e)
-
-    def repopulate_vfs(self, path):
-        '''
-            Called when path already exists in vfs and we are supposed to check if
-            we need to update the entries.
-
-            At this point path is in vfs
-        '''
-        try:
-            realpath = None
-            if self.vfs[path].rar:
-                stat = os.lstat(self.vfs[path].rar.rarfile)
-            else:
-                realpath = os.path.join(self.vfs[path].realpath, self.vfs[path].name)
-                stat = os.lstat("." + realpath)
-
-            if stat.st_mtime != self.vfs[path].stat.st_mtime:
-                self.update_path(path)
-            elif realpath:
-                # Normal directory hasn't changed, check flatten directories
-                # Feels lite stupid, somewhat duplicates the code in update_path
-                if os.path.isdir("." + realpath):
-                    for e in os.listdir("." + realpath):
-                        if self.shouldBeFlatten(realpath, e):
-                            st = os.lstat("." + os.path.join(realpath, e))
-                            fD = self.vfs[path].flattenDirectories
-                            if (e in fD and st.st_mtime != fD[e].st_mtime) or not e in fD:
-                                # Flatten directory has changed, update, or it's a new flattened directory
-                                fD[e] = st
-                                for e_sub in os.listdir("." + os.path.join(realpath, e)):
-                                    self.appendToVfs(path, os.path.join(realpath, e), e_sub)
-        except OSError:
-            traceback.print_exc()
-            self.delete_path(path)
-
-    def update_path(self, path):
-        '''
-            An update of path is needed.
-        '''
-
-        realpath = self.vfs[path].realpath
-        name = self.vfs[path].name
-
-        if self.vfs[path].rar:
-            # This happens when the containing first rar-file is changed
-            # Simply add it again to reload it.
-            self.appendToVfs(path, realpath, os.path.basename(self.vfs[path].rar.rarfile))
-        else:
-            # Normal file, just update the stats
-            self.vfs[path].stat = RoStat("." + os.path.join(realpath, name))
-
-            if self.vfs[path].stat.isdir() and self.vfs[path].isPopulated():
-                # mtime of directory has changed, this hints that it's possible
-                # that an entry below it has changed.
-                realdir = os.path.join(realpath, name)
-
-                for e in os.listdir("." + realdir):
-                    # Is this a flatten directory
-                    if e in self.vfs[path].flattenDirectories:
-                        st = os.lstat("." + os.path.join(realdir, e))
-                        if st.st_mtime != self.vfs[path].flattenDirectories[e].st_mtime:
-                            # Flatten directory has changed, update
-                            self.vfs[path].flattenDirectories[e] = os.lstat("." + os.path.join(realdir, e))
-                            for e_sub in os.listdir("." + os.path.join(realdir, e)):
-                                self.appendToVfs(path, os.path.join(realdir, e), e_sub)
-                    else:
-                        self.appendToVfs(path, realdir, e)
-
-    def delete_path(self, path):
-        '''
-            Path doesn't exists anymore, delete it as well as all entries below.
-        '''
-
-        for e in self.vfs[path].entries:
-            del self.vfs[os.path.join(path, e.name)]
-
-        del self.vfs[path]
-
-
-    def shouldBeFlatten(self, path, e):
+    def shouldBeFlattened(self, path, e):
         '''
             Should the entry path/e be removed and it's content be displayed insted
         '''
-        if os.path.isdir("." + os.path.join(path, e)) and self.flattenRes:
+        if os.path.isdir("." + os.path.join(path, e)):
             for r in self.flattenRes:
                 if r.match(e):
                     return True
         return False
 
-    def shouldBeHidden(self, e):
+    def shouldBeFiltered(self, e):
         '''
-            Called by appendToVfs to check if the name e should be added.
+            Should path component e be filtered?
         '''
-        if self.filterRes:
-            for r in self.filterRes:
-                if r.match(e):
-                    return True
+        for r in self.filterRes:
+            if r.match(e):
+                return True
+        if self.rarRe.match(e):
+            return True
         return False
 
-    def appendToVfs(self, vpath, realpath, e):
+    def isFirstRarFile(self, e):
         '''
-            Append entry e in realpath to vpath.
-
-            If this is a rar-file, add first file in rar-file instead.
+            Return True if e looks like the first rar file.
+            Ends with part001.rar, .rar, or .001
         '''
-        if self.shouldBeHidden(e):
-            return
-
-        filename = os.path.join(realpath, e)
-
-        entry = None
         m = self.rarRe.match(e)
-        if m:
-            if m.group(1) in ('001', '01') or m.group(2) == 'ar' or m.group(3) in ('001', '01'):
-                rar = rarfile.RarFile("." + filename, only_first=True)
+        if m and (m.group(1) in ('001', '01') or m.group(2) == 'ar' or m.group(3) == '001'):
+            return True
+        return False
 
-                for info in rar.infolist()[:1]:
-                    entry = Entry()
-                    entry.name = info.filename.split('\\')[-1]
-                    entry.info = info
-                    entry.rar = rar
-                    entry.realpath = realpath
-                    entry.stat = RarStat("." + filename, info)
-        else:
-            entry = Entry()
-            entry.name = e
-            entry.realpath = realpath
-            entry.stat = RoStat("." + filename)
+    def couldExist(self, path):
+        '''
+            Check if path should exist. That is, does it contain a filtered or
+            flattened path component.
+        '''
+        try:
+            return self.couldExistCache[path]
+        except KeyError:
+            pass
 
-        if entry:
-            self.vfs[vpath].entries.discard(entry)
-            self.vfs[vpath].entries.add(entry)
-            self.vfs[os.path.join(vpath, entry.name)] = entry
+        part = os.path.basename(path)
+        if self.shouldBeFiltered(part):
+            self.couldExistCache[path] = False
+            return False
+
+        if os.path.isdir("." + path):
+            for r in self.flattenRes:
+                if r.match(part):
+                    self.couldExistCache[path] = False
+                    return False
+
+        self.couldExistCache[path] = True
+        return True
+
+    def readdir_flattened(self, path):
+        '''
+            Read directory at path, path is supposed to flattened.
+            This means that every entry needs to have it's realpath saved.
+
+            It's know that path is a directory.
+        '''
+        for e in os.listdir("." + path):
+            if self.shouldBeFiltered(e) and not self.isFirstRarFile(e):
+                continue
+            if self.shouldBeFlattened(path, e):
+                for sub in self.readdir_flattened(os.path.join(path, e)):
+                    yield sub
+            else:
+                yield (path, e)
+
+    def readdir_rar(self, vpath, filename):
+        '''
+            filename looks like a first rar-file, yield it's files
+
+            Return a generator used to step through all entries
+            If it looks like a rar file, but isn't, it will be filtered.
+        '''
+        rar = self.rars.get(filename, rarfile.RarFile("." + filename, only_first=True))
+
+        for rar_info in rar.infolist():
+            # Flatten rar archive
+            name = rar_info.filename.split('\\')[-1]
+            entry = VfsEntry(filename)
+            entry.rar = rar
+            entry.rar_info = rar_info
+            self.vfs[os.path.join(vpath, name)] = entry
+            yield name
+
 
     def getattr(self, path):
-        self.populate_vfs(path, mustPopulate = False)
-        if path in self.vfs:
-            return self.vfs[path].stat
-        return -errno.ENOENT
+        if not self.couldExist(path):
+            return -errno.ENOENT
+
+        stat = -errno.ENOENT
+        if os.path.exists("." + path):
+            stat = RoStat(path)
+        else:
+            if not path in self.vfs:
+                for x in self.readdir(os.path.dirname(path), 0):
+                    pass
+            if path in self.vfs:
+                stat = self.vfs[path].stat()
+                if stat == -errno.ENOENT:
+                    del self.vfs[path]
+
+        return stat
+
+    def opendir(self, path):
+        if not self.couldExist(path):
+            return -errno.ENOENT
+        return 0
 
     def readdir(self, path, offset):
-        self.populate_vfs(path)
-        if path in self.vfs:
-            yield fuse.Direntry('.')
-            yield fuse.Direntry('..')
-            for e in self.vfs[path].entries:
-                yield fuse.Direntry(e.name)
+        yield fuse.Direntry(".")
+        yield fuse.Direntry("..")
+
+        if os.path.exists("." + path):
+            realpath = path
+        else:
+            if path in self.vfs:
+                realpath = self.vfs[path].realpath
+            else:
+                raise OSError(errno.ENOENT, '')
+
+        for e in os.listdir("." + realpath):
+            if self.shouldBeFiltered(e) and not self.isFirstRarFile(e):
+                continue
+            if self.shouldBeFlattened(realpath, e):
+                for (path_sub, e_sub) in self.readdir_flattened(os.path.join(realpath, e)):
+                    if self.isFirstRarFile(e_sub):
+                        for e_rar in self.readdir_rar(path, os.path.join(path_sub, e_sub)):
+                            yield fuse.Direntry(e_rar)
+                    else:
+                        self.vfs[os.path.join(path, e_sub)] = VfsEntry(os.path.join(path_sub, e_sub))
+                        yield fuse.Direntry(e_sub)
+            else:
+                if self.isFirstRarFile(e):
+                    for e_rar in self.readdir_rar(path, os.path.join(realpath, e)):
+                        yield fuse.Direntry(e_rar)
+                else:
+                    yield fuse.Direntry(e)
 
     def readlink(self, path):
         return os.readlink("." + path)
@@ -420,12 +341,19 @@ class RarDirFs(fuse.Fuse):
             if flags & accmode != os.O_RDONLY:
                 raise IOError(errno.EROFS, '')
 
-            if path in self.rarFs.vfs:
-                entry = self.rarFs.vfs[path]
-                if entry.rar:
-                    self.file = RarDirFs.RarFile(entry.rar, entry.info.filename)
+            self.file = None
+
+            if os.path.exists("." + path):
+                self.file = RarDirFs.NormalFile(path)
+            else:
+                if path in self.rarDirFs.vfs:
+                    entry = self.rarDirFs.vfs[path]
+                    if entry.rar:
+                        self.file = RarDirFs.RarFile(entry.rar, entry.rar_info.filename)
+                    else:
+                        self.file = RarDirFs.NormalFile(entry.realpath)
                 else:
-                    self.file = RarDirFs.NormalFile(os.path.join(entry.realpath, entry.name))
+                    raise IOError(errno.ENOENT, '')
 
         def read(self, length, offset):
             return self.file.read(length, offset)
