@@ -1,4 +1,4 @@
-.TH rardirfs 1 "23 okt 2009" "RarDirFs 0.1" "RarDirFs Manual"
+.TH rardirfs 1 "4 nov 2009" "RarDirFs 0.1" "RarDirFs Manual"
 .SH NAME
 rardirfs \- mount a directory with direct access to RAR archive content
 .SH SYNOPSIS
@@ -22,6 +22,19 @@ Options are specified with a
 .B \-o
 flag followed by a comma separated string of options. 
 .RS
+.TP
+.B only_first=OPT
+Select behaviour for split archives. To get a list of all files inside an archive, all rar files needs to be scanned. This creates an initial performance hit during scanning.
+
+.B yes
+only show first file, this is the fastest alternative. Use this if you only want the first file, or you know that there is only one file in the archive.
+
+.B auto
+same as yes if only one file is found in first rar archive otherwise same as no.
+
+.B no
+show all files.
+
 .TP
 .B filter=FILE
 A file containing patterns used to filter out entries. An entry that matches any pattern in FILE will not be available.
@@ -149,11 +162,11 @@ disable remote file locking
 .TP
 Only works on uncompressed rar archives. If you try to use it on compressed archives it won't show any files.
 .TP
-Only first file in an archive is shown. This is an optimization since all files needs to scanned in order to support more then one file.
-.TP
-Flatten only works at one level. If you have /foo/foo/bar and want to flatten out foo, you would get /foo/bar instead of the expected /bar.
-.TP
 RarDirFs does not verify that the RAR archive is correct or complete.
+.TP
+Directories inside archives will be flattened.
+.TP
+Currently it's undefined what happens on a name clatch. This can happen if you flatten a directory, have an archive containing directories or a normal file colides with file inside an archive.
 
 .SH AUTHOR
 Jonas Jonsson <jonas@websystem.se>

@@ -134,6 +134,7 @@ class RarDirFs(fuse.Fuse):
         self.filter = None
         self.flatten = None
         self.srcdir = None
+        self.only_first = None
 
         # Use a special class for file operations
         self.file_class = self.RarDirFsFile
@@ -225,11 +226,16 @@ class RarDirFs(fuse.Fuse):
             Return a generator used to step through all entries
             If it looks like a rar file, but isn't, it will be filtered.
         '''
-        rar = self.rars.get(filename, rarfile.RarFile("." + filename, only_first=True))
+        rar = self.rars.get(filename, rarfile.RarFile("." + filename, only_first=self.only_first))
 
         for rar_info in rar.infolist():
+            # Skip compressed files
+            if rar_info.compress_type != 0x30:
+                continue
             # Flatten rar archive
             name = rar_info.filename.split('\\')[-1]
+            if self.shouldBeFiltered(name):
+                continue
             entry = VfsEntry(filename)
             entry.rar = rar
             entry.rar_info = rar_info

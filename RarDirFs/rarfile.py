@@ -148,6 +148,8 @@ class RarInfo:
     header_crc = None
     file_offset = None
     add_size = None
+    next_file_offset = None # file_offset for next volume
+    next_add_size = None # add_size for next volume
     header_data = None
     header_unknown = None
     header_offset = None
@@ -161,11 +163,12 @@ class RarInfo:
 
 class RarFile:
     '''Rar archive handling.'''
-    def __init__(self, rarfile, mode="r", charset=None, info_callback=None, only_first=False):
+
+    def __init__(self, rarfile, mode="r", charset=None, info_callback=None, only_first='no'):
         self.rarfile = rarfile
         self.charset = charset
 
-        self.info_list = []
+        self.info_list = {}
         self.is_solid = 0
         self.uses_newnumbering = 0
         self.uses_volumes = 0
@@ -174,6 +177,9 @@ class RarFile:
         self._gen_volname = self._gen_oldvol
         self.only_first = only_first
 
+        if not only_first in ('yes', 'no', 'auto'):
+            raise ValueError('only_first only accepts yes, no and auto')
+
         if mode != "r":
             raise NotImplementedError("RarFile supports only mode=r")
 
@@ -181,27 +187,27 @@ class RarFile:
 
     def namelist(self):
         '''Return list of filenames in rar'''
-        res = []
-        for f in self.info_list:
-            res.append(f.filename)
-        return res
+        return self.info_list.keys()
 
     def infolist(self):
         '''Return rar entries.'''
-        return self.info_list
+        return self.info_list.values()
 
     def getinfo(self, fname):
         '''Return RarInfo for fname.'''
-        fname2 = fname.replace("/", "\\")
-        for f in self.info_list:
-            if fname == f.filename or fname2 == f.filename:
-                return f
+        ret = self.info_list.get(fname)
+        if not ret:
+            fname = fname.replace("/", "\\")
+            ret = self.info_list.get(fname)
+
+            if not ret:
+                raise NoRarEntry("No such file")
+
+        return ret
 
     def read(self, fname):
         '''Return decompressed data.'''
         inf = self.getinfo(fname)
-        if not inf:
-            raise NoRarEntry("No such file")
 
         if inf.isdir():
             raise TypeError("Directory does not have any data")
@@ -221,8 +227,6 @@ class RarFile:
     def read_partial(self, fname, offset, length):
         '''Read just a part of a file'''
         inf = self.getinfo(fname)
-        if not inf:
-            raise NoRarEntry("No such file")
 
         if inf.isdir():
             raise TypeError("Directory does not have any data")
@@ -241,15 +245,31 @@ class RarFile:
     def printdir(self):
         """Print archive file list to stdout."""
         for f in self.info_list:
-            print f.filename
+            print f
 
     # store entry
     def _process_entry(self, item):
         # RAR_BLOCK_NEWSUB has files too: CMT, RR
         if item.type == RAR_BLOCK_FILE:
+            # If we only want first, skip this step
+            if self.only_first == 'yes' and self.info_list:
+                return
+
             # use only first part
             if (item.flags & RAR_FILE_SPLIT_BEFORE) == 0:
-                self.info_list.append(item)
+                if not self.info_list:
+                    # First file in first volume, next volume will be equal
+                    # Is this always true?
+                    item.next_add_size = item.add_size
+                    item.next_file_offset = item.file_offset
+                self.info_list[item.filename] = item
+            else:
+                # Add information about second part, used in _extract_partial
+                inf = self.info_list[item.filename]
+                if not inf.next_add_size:
+                    inf.next_add_size = item.add_size
+                if not inf.next_file_offset:
+                    inf.next_file_offset = item.file_offset
 
         if self.info_callback:
             self.info_callback(item)
@@ -266,8 +286,11 @@ class RarFile:
         while 1:
             h = self._parse_header(fd)
             if not h:
-                if self.only_first:
+                if self.only_first == 'yes':
                     break
+                if self.only_first == 'auto':
+                    if len(self.info_list) == 1:
+                        break
                 if more_vols:
                     volume += 1
                     fd = open(self._gen_volname(volume), "rb")
@@ -469,8 +492,6 @@ class RarFile:
 
     def _extract_clear_partial(self, inf, offset, length):
         '''Read an uncompressed file partially'''
-        if not self.only_first:
-            raise Error("Partial reading is only supported when using only_first")
 
         if offset > inf.file_size:
           return ''
@@ -478,31 +499,35 @@ class RarFile:
         if offset + length > inf.file_size:
           length = inf.file_size - offset
 
-        volume = inf.volume + offset / inf.add_size
-        volume_offset = offset % inf.add_size
-        volume_length = inf.add_size - volume_offset
+        if offset > inf.add_size:
+            volume = inf.volume + 1 + (offset - inf.add_size) / inf.next_add_size
+            volume_offset = (offset - inf.add_size) % inf.next_add_size
+            volume_length = inf.next_add_size - volume_offset
+            file_offset = inf.next_file_offset
+        else:
+            volume = inf.volume
+            volume_offset = offset
+            volume_length = inf.add_size - volume_offset
+            file_offset = inf.file_offset
 
         if length < volume_length:
           volume_length = length
 
         buf = ""
-        while 1:
+        while length > 0:
             f = open(self._gen_volname(volume), "rb")
-            f.seek(inf.file_offset + volume_offset)
+            f.seek(file_offset + volume_offset)
             buf += f.read(volume_length)
             f.close()
             length -= volume_length
 
-
-            if length > 0:
-                volume_offset = 0
-                if length < inf.add_size:
-                    volume_length = length
-                else:
-                    volume_length = add_size
-                volume += 1
+            volume_offset = 0
+            volume += 1
+            file_offset = inf.next_file_offset
+            if length < inf.next_add_size:
+                volume_length = length
             else:
-              break
+                volume_length = inf.next_add_size
 
         return buf
 
