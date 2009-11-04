@@ -31,9 +31,9 @@ def main():
     rarDirFs.parse(values=rarDirFs, errex=1)
     (options, args) = rarDirFs.cmdline
     # It seems that default doesn't work for suboptparser, manually add
-    if not options.filter:
+    if not options.filter and os.path.isfile("/etc/rardirfs/filter"):
         options.filter = "/etc/rardirfs/filter"
-    if not options.flatten:
+    if not options.flatten and os.path.isfile("/etc/rardirfs/flatten"):
         options.flatten = "/etc/rardirfs/flatten"
     if not options.only_first:
         options.only_first = 'auto'

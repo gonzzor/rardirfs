@@ -37,13 +37,13 @@ show all files.
 
 .TP
 .B filter=FILE
-A file containing patterns used to filter out entries. An entry that matches any pattern in FILE will not be available.
+A file containing patterns used to filter out entries. An entry that matches any pattern in FILE will not be available. If /etc/rardirfs/filter exists it is used as default.
 
 The file should contain one pattern per line. Lines starting with # are ignored. All patterns must be compatible with Python re module.
 
 .TP
 .B flatten=FILE
-A file containing patterns used to flatten out directories. A directory matching a pattern will be replaced by it's content.
+A file containing patterns used to flatten out directories. A directory matching a pattern will be replaced by it's content. If /etc/rardirfs/flatten exists it is used as default.
 
 The file uses same format as 
 .B filter
