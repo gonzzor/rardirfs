@@ -77,7 +77,7 @@ class CacheManager(object):
             Will spawn an unrar process if needed thus it's not true that the
             file will be complete when returned.
         '''
-        cache_dir  = os.path.join(self.path, "." + entry.realpath)
+        cache_dir  = os.path.join(self.path, "." + os.path.abspath("." + entry.realpath))
         cache_file = os.path.join(cache_dir, entry.rar_info.filename)
 
         if not os.path.isdir(cache_dir):
