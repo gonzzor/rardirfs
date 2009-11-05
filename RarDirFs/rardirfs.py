@@ -186,9 +186,9 @@ class RarStat(fuse.Stat):
         self.st_uid = s.st_uid
         self.st_gid = s.st_gid
         self.st_size = info.file_size
-        self.st_atime = time.time()
-        self.st_mtime = s.st_mtime
-        self.st_ctime = time.mktime(info.date_time + (-1, -1, -1))
+        self.st_atime = time.mktime(info.date_time + (-1, -1, -1))
+        self.st_mtime = time.mktime(info.date_time + (-1, -1, -1))
+        self.st_ctime = time.time()
 
 
 class RarDirFsFile(object):
