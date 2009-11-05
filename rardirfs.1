@@ -8,7 +8,10 @@ rardirfs \- mount a directory with direct access to RAR archive content
 .SH DESCRIPTION
 Mount a directory read only where all rar archives are hidden and their files are shown instead. Beside this it can also filter files and flatten out directories.
 
-The big difference from other fuse based rar archive file systems is that RarDirFs doesn't unpack the whole file when you open it, it just read directly from the archive. No extra storage, no extra time, just as you normally would. Because of this design choice some limitations arose, see under Limitations.
+The big difference from other fuse based rar archive file systems is that RarDirFs doesn't unpack the whole file when you open it, it just read directly from the archive. No extra storage, no extra time, just as you normally would. Because of this design choice some limitations arose, see under BUGS.
+
+In order to support compressed archives RarDirFs uses the unrar command. It will use this feature if unrar can be found in PATH.
+
 .SH OPTIONS
 .TP
 .B "-h/--help"
@@ -48,6 +51,14 @@ A file containing patterns used to flatten out directories. A directory matching
 The file uses same format as 
 .B filter
 above.
+
+.TP
+.B cache_path=PATH
+When using unrar to decompress archives use PATH as a cache for the files. Make sure you have space for all uncompressed archives you might have. Otherwise read operations can return "No space left on device". If PATH doesn't exist it will be created. Default is /var/cache/rardirfs/.
+
+.TP
+.B disable_unrar
+Disable support for unrar when archive is compressed. Default is to use unrar if it can be found.
 
 .SH FUSE OPTIONS
 .TP
@@ -159,8 +170,6 @@ enable larger than 4kB writes
 disable remote file locking
 
 .SH BUGS
-.TP
-Only works on uncompressed rar archives. If you try to use it on compressed archives it won't show any files.
 .TP
 RarDirFs does not verify that the RAR archive is correct or complete.
 .TP

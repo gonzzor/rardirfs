@@ -51,13 +51,13 @@ If an entry would match a pattern in both files, it will be filtered.
 
 Known Limitations
 -----------------
-* Only works on uncompressed rar archives. If you try to use it on compressed
-archives it won't show any files.
 * RarDirFs does not verify that the RAR archive is correct or complete.
+* Compressed archives are support by using the unrar command.
 
 Requirements
 ------------
 Currently it only depends on fuse-python.
+For compressed archives, unrar is also needed.
 
 License
 -------
