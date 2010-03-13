@@ -320,7 +320,7 @@ class RarDirFs(fuse.Fuse):
 
         self.filterRes = []
         self.flattenRes = []
-        self.rarRe = re.compile("^.*?(?:\.part(\d{2,3})\.rar|\.r(ar|\d{2})|(\d{2,3}))$", re.I)
+        self.rarRe = re.compile("^.*?(?:\.part(\d{2,3})\.rar|\.r(ar|\d{2})|\.(\d{2,3}))$", re.I)
         self.couldExistCache = dict()
 
         self.vfs = {} # Virtual path -> Real path
