@@ -176,6 +176,7 @@ class RarFile:
         self.got_mainhdr = 0
         self._gen_volname = self._gen_oldvol
         self.only_first = only_first
+        self.has_comment = False
 
         if not only_first in ('yes', 'no', 'auto'):
             raise ValueError('only_first only accepts yes, no and auto')
@@ -250,18 +251,17 @@ class RarFile:
     # store entry
     def _process_entry(self, item):
         # RAR_BLOCK_NEWSUB has files too: CMT, RR
+        if item.type == RAR_BLOCK_SUB:
+            if item.filename == 'CMT':
+                self.has_comment = True
+
         if item.type == RAR_BLOCK_FILE:
             # If we only want first, skip this step
-            if self.only_first == 'yes' and self.info_list:
+            if self.only_first == 'yes' and not self._must_read_next(item.volume):
                 return
 
             # use only first part
             if (item.flags & RAR_FILE_SPLIT_BEFORE) == 0:
-                if not self.info_list:
-                    # First file in first volume, next volume will be equal
-                    # Is this always true?
-                    item.next_add_size = item.add_size
-                    item.next_file_offset = item.file_offset
                 self.info_list[item.filename] = item
             else:
                 # Add information about second part, used in _extract_partial
@@ -273,6 +273,24 @@ class RarFile:
 
         if self.info_callback:
             self.info_callback(item)
+
+    def _must_read_next(self, volume):
+        """Determine if the next volume must be read"""
+        # It is only the second volume that might of extra interest
+        if volume > 0:
+            return False
+
+        # If there is no info_list, read the next volume
+        if not self.info_list:
+            return True
+
+        # Is the archive split?
+        split_after = not self.info_list.values()[0].flags & RAR_FILE_SPLIT_AFTER == 0
+
+        if self.has_comment and split_after:
+            return True
+
+        return False
 
     # read rar
     def _parse(self):
@@ -286,10 +304,14 @@ class RarFile:
         while 1:
             h = self._parse_header(fd)
             if not h:
-                if self.only_first == 'yes':
-                    break
-                if self.only_first == 'auto':
-                    if len(self.info_list) == 1:
+                # If we don't have a comment, the next volume RAR_BLOCK_FILE
+                # will start at the same position. However if a comment is
+                # present and the file is split into more than one archive,
+                # continue and read next archive.
+                if not self._must_read_next(volume):
+                    if self.only_first == 'yes':
+                        break
+                    if self.only_first == 'auto' and len(self.info_list) == 1:
                         break
                 if more_vols:
                     volume += 1
@@ -494,10 +516,14 @@ class RarFile:
         '''Read an uncompressed file partially'''
 
         if offset > inf.file_size:
-          return ''
+            return ''
 
         if offset + length > inf.file_size:
-          length = inf.file_size - offset
+            length = inf.file_size - offset
+
+        if not inf.next_add_size:
+            inf.next_add_size = inf.add_size
+            inf.next_file_offset = inf.file_offset
 
         if offset > inf.add_size:
             volume = inf.volume + 1 + (offset - inf.add_size) / inf.next_add_size
