@@ -8,11 +8,11 @@ setup(name='RarDirFs',
       description='Mount a directory read only with direct access to files in RAR archives',
       long_description="""
 Mount a directory read only where all rar archives are hidden and their
-files are shown instead. Beside this it can also filter files and 
+files are shown instead. Beside this it can also filter files and
 flatten out directories.""",
       author='Jonas Jonsson',
       author_email='jonas@websystem.se',
-      url='http://launchpad.net/rardirfs',
+      url='https://github.com/gonzzor/rardirfs',
       license='BSD',
       packages=['RarDirFs'],
       scripts=['rardirfs'],
