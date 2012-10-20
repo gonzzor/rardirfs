@@ -150,6 +150,7 @@ class RarInfo:
     add_size = None
     next_file_offset = None # file_offset for next volume
     next_add_size = None # add_size for next volume
+    next_compress_size = None # compress_size for next volume
     header_data = None
     header_unknown = None
     header_offset = None
@@ -270,6 +271,8 @@ class RarFile:
                     inf.next_add_size = item.add_size
                 if not inf.next_file_offset:
                     inf.next_file_offset = item.file_offset
+                if not inf.next_compress_size:
+                    inf.next_compress_size = item.compress_size
 
         if self.info_callback:
             self.info_callback(item)
@@ -521,9 +524,13 @@ class RarFile:
         if offset + length > inf.file_size:
             length = inf.file_size - offset
 
+        if not inf.add_size:
+            inf.add_size = inf.compress_size
+
         if not inf.next_add_size:
             inf.next_add_size = inf.add_size
             inf.next_file_offset = inf.file_offset
+            inf.next_compress_size = inf.compress_size
 
         if offset > inf.add_size:
             volume = inf.volume + 1 + (offset - inf.add_size) / inf.next_add_size
